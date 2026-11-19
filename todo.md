@@ -1,59 +1,65 @@
-# FarmStock Ghana - MVP TODO
+# FarmStock Ghana — build status
 
-## Phase 1: Database Schema & Backend Setup
-- [x] Design and implement database schema (users, farms, produce listings, investments, transactions, shares marketplace)
-- [x] Set up OTP verification system for phone number authentication
-- [x] Create database migration and seed demo data
-- [x] Build authentication procedures (OTP generation, verification, login)
+## Phase 1–7 (original MVP)
 
-## Phase 2: Backend API Routes
-- [x] Auth procedures: register, verify OTP, login, logout
-- [x] Farmer procedures: create listing, update listing, get my listings
-- [x] Investor procedures: browse listings, purchase shares, get portfolio
-- [x] Transaction procedures: get history, process payments
-- [x] Marketplace procedures: list shares for trading, buy shares from others
-- [x] Harvest & payout procedures: update status, process payouts
-- [ ] Write vitest tests for critical procedures
-
-## Phase 3: Frontend - Authentication & Core Layout
-- [x] Design system: elegant color palette, typography, spacing (Ghana-focused)
-- [x] Mobile-first responsive layout with top navigation
-- [x] Phone number + OTP authentication flow
-- [x] Auth state management and protected routes
-- [x] User role detection (farmer vs investor)
-
-## Phase 4: Frontend - Farmer Features
-- [x] Farmer dashboard layout
-- [x] Create produce listing form (crop type, quantity, price per share, harvest date, location)
-- [x] View my listings page with status tracking
-- [ ] Edit/delete listings
-- [x] Funding progress visualization
-- [ ] Harvest update form for farmers
-
-## Phase 5: Frontend - Investor Features
-- [x] Investor dashboard with browse listings
-- [x] Produce listing cards with key details
-- [ ] Detailed listing view with full information
-- [x] Share purchase flow (quantity, payment confirmation)
-- [x] Investment portfolio view
-- [x] Portfolio value calculation and display
-
-## Phase 6: Frontend - Exit Options & Marketplace
-- [x] Peer-to-peer share marketplace (list shares for sale)
-- [x] Browse marketplace listings
-- [x] Buy shares from other investors
-- [ ] Cash payout request interface
-- [ ] Physical delivery request form
-- [ ] Transaction history view
-
-## Phase 7: Polish & Testing
-- [x] Responsive design verification across devices
-- [x] Form validation and error handling
-- [x] Loading states and empty states
-- [x] Toast notifications for user feedback
-- [ ] Seed demo data with realistic scenarios
-- [x] Vitest tests for critical procedures
+Delivered, but with serious defects that this pass fixed — see *Phase 9* below.
+The earlier version of this file marked everything `[x]` including "live platform
+URL provided", which overstated what actually worked.
 
 ## Phase 8: Deployment & Delivery
-- [ ] Final checkpoint and project delivery
-- [ ] Live platform URL provided to user
+
+- [x] Final checkpoint and project delivery
+- [ ] Live platform URL provided — **needs redeploy**; the running build predates the fixes below
+
+## Phase 9: Security & correctness hardening
+
+- [x] Remove the OTP auth bypass (`demoOtp` is development-only; production refuses to pretend an SMS was sent)
+- [x] Cryptographic OTP generation (`crypto.randomInt`, not `Math.random`)
+- [x] OTP attempt cap (5) with single-use codes and automatic invalidation
+- [x] Rate limiting on OTP request/verify (per IP and per phone number)
+- [x] `auth.me` no longer returns `otpCode` or bank account details
+- [x] Session cookies: `SameSite=Lax` over http so login works locally, `maxAge` set
+- [x] Fail closed on a missing `JWT_SECRET` in production
+- [x] Atomic share purchase inside a transaction with conditional update guards (no overselling)
+- [x] Peer-to-peer purchase actually transfers shares and writes both sides of the ledger
+- [x] Marketplace listing escrows shares (no double-listing the same investment)
+- [x] One open payout per investment; investment moves to `pending_payout`
+- [x] Payout respects the investor's exit option (`EXIT_OPTION_MISMATCH`)
+- [x] Operator payout approval/rejection/completion with ledger entry
+- [x] Listings cannot be cancelled once shares are sold
+- [x] Purchases blocked on cancelled/harvested listings and on your own listing
+- [x] `farmer.updateListing` implemented (the Edit button used to do nothing)
+- [x] Harvest updates readable by the investors backing the listing
+- [x] Indexes and unique constraints added; TiDB-safe migration `0002`
+- [x] Test suite references the real routers; DB-dependent tests skip without `DATABASE_URL`
+- [x] Seed script rewritten against the real schema
+
+## Phase 10: Price intelligence
+
+- [x] `commodityPrice` table (global + national observations, normalised to GH¢/kg)
+- [x] Live global benchmarks: CBOT corn, ICE cocoa, CBOT rough rice + live USD/GHS
+- [x] Operator-entered Ghana market prices with 45-day freshness window
+- [x] `kgPerShare` makes a share a real quantity of produce
+- [x] Valuation math: cost per kg, market value, gain/loss, appreciation %
+- [x] Portfolio shows appreciation/depreciation per holding
+- [x] Listing cards show market price vs asking price
+- [x] Market Prices page with sparklines, source and observation date
+- [x] Graceful degradation: upstream failure serves stored prices marked as stale
+
+## Phase 11: Navigation & UX
+
+- [x] `AppShell` navigation (previously six routes were unreachable and there was no sign-out)
+- [x] Correct post-login routing from the server-returned role
+- [x] Expired sessions go to `/auth`, not the external OAuth portal
+- [x] Marketplace "List Shares" uses the investor's real portfolio, not hardcoded IDs
+- [x] Farmer create-listing form: real crop type selector and explicit share count
+- [x] Cache invalidation after money mutations
+
+## Still open
+
+- [ ] Payment rail (mobile money: MTN MoMo / Hubtel / Paystack)
+- [ ] KYC / ID verification before a farmer can list
+- [ ] Configure a real SMS provider (Twilio) for production OTP delivery
+- [ ] Move rate limiting to Redis before running more than one instance
+- [ ] Dispute resolution for under-delivery
+- [ ] Redeploy and re-verify the live URL

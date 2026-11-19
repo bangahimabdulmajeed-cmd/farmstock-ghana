@@ -5,7 +5,6 @@ import { httpBatchLink, TRPCClientError } from "@trpc/client";
 import { createRoot } from "react-dom/client";
 import superjson from "superjson";
 import App from "./App";
-import { getLoginUrl } from "./const";
 import "./index.css";
 
 const queryClient = new QueryClient();
@@ -17,8 +16,10 @@ const redirectToLoginIfUnauthorized = (error: unknown) => {
   const isUnauthorized = error.message === UNAUTHED_ERR_MSG;
 
   if (!isUnauthorized) return;
-
-  window.location.href = getLoginUrl();
+  // This app signs in with a phone number and OTP at /auth. Sending the user to
+  // the external Manus OAuth portal ejected them from the product entirely.
+  if (window.location.pathname === "/auth") return;
+  window.location.href = "/auth";
 };
 
 queryClient.getQueryCache().subscribe(event => {

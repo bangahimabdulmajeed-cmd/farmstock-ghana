@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useLocation } from "wouter";
+import { useEffect } from "react";
 import { getLoginUrl } from "@/const";
 import { Leaf, TrendingUp, Users, Zap, ArrowRight, CheckCircle2 } from "lucide-react";
 
@@ -9,9 +10,20 @@ export default function Home() {
   const { user } = useAuth();
   const [, navigate] = useLocation();
 
+  useEffect(() => {
+    if (!user) return;
+    if (user.role === "farmer") navigate("/farmer/dashboard");
+    else if (user.role === "investor" || user.role === "admin") navigate("/investor/dashboard");
+  }, [navigate, user]);
+
+  // Signed-in visitors are redirected to their workspace; render a spinner
+  // instead of a blank page while that happens.
   if (user) {
-    navigate(user.role === "farmer" ? "/farmer/dashboard" : "/investor/dashboard");
-    return null;
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-primary" />
+      </div>
+    );
   }
 
   return (
@@ -49,12 +61,16 @@ export default function Home() {
               Invest in agricultural produce from just GH¢ 10. Support local farmers and grow your wealth together.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Button size="lg" className="gap-2">
-                Start as Investor
-                <ArrowRight className="w-5 h-5" />
+              <Button size="lg" className="gap-2" asChild>
+                <a href="/auth">
+                  Start as Investor
+                  <ArrowRight className="w-5 h-5" />
+                </a>
               </Button>
-              <Button size="lg" variant="outline">
-                List Your Produce
+              <Button size="lg" variant="outline" asChild>
+                <a href="/auth">
+                  List Your Produce
+                </a>
               </Button>
             </div>
 
@@ -234,9 +250,11 @@ export default function Home() {
             <p className="text-lg text-muted-foreground mb-8 max-w-2xl mx-auto">
               Join thousands of Ghanaian farmers and investors building a stronger agricultural future
             </p>
-            <Button size="lg" className="gap-2">
-              Create Your Account
-              <ArrowRight className="w-5 h-5" />
+            <Button size="lg" className="gap-2" asChild>
+              <a href="/auth">
+                Create Your Account
+                <ArrowRight className="w-5 h-5" />
+              </a>
             </Button>
           </div>
         </div>

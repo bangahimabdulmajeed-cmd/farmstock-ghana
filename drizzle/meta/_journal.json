@@ -15,6 +15,13 @@
       "when": 1774174366677,
       "tag": "0001_flaky_exodus",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1795111200000,
+      "tag": "0002_price_intelligence",
+      "breakpoints": true
     }
   ]
 }

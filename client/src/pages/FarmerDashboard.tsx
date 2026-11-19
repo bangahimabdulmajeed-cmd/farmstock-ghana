@@ -47,6 +47,8 @@ export default function FarmerDashboard() {
     try {
       await createListingMutation.mutateAsync({
         ...formData,
+        totalQuantity: parseFloat(formData.totalQuantity),
+        pricePerShare: parseFloat(formData.pricePerShare),
         totalShares: parseInt(formData.totalShares),
         harvestDate: new Date(formData.harvestDate),
       });

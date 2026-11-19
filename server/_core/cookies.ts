@@ -39,10 +39,15 @@ export function getSessionCookieOptions(
   //       ? hostname
   //       : undefined;
 
+  // `SameSite=None` requires `Secure`, and browsers silently drop cookies that
+  // violate that rule. Sending "none" over plain http therefore breaks login on
+  // localhost. Use lax when the request is not https.
+  const secure = isSecureRequest(req);
+
   return {
     httpOnly: true,
     path: "/",
-    sameSite: "none",
-    secure: isSecureRequest(req),
+    sameSite: secure ? "none" : "lax",
+    secure,
   };
 }

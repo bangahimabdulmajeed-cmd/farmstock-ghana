@@ -1,68 +1,111 @@
+import type { ComponentType } from "react";
+import { useEffect } from "react";
+import { Route, Switch, useLocation } from "wouter";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import NotFound from "@/pages/NotFound";
-import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
+import AppShell from "./components/AppShell";
 import { ThemeProvider } from "./contexts/ThemeContext";
+import { useAuth } from "./_core/hooks/useAuth";
 import Home from "./pages/Home";
 import Auth from "./pages/Auth";
 import InvestorDashboard from "./pages/InvestorDashboard";
 import FarmerDashboard from "./pages/FarmerDashboard";
 import Marketplace from "./pages/Marketplace";
-import { useAuth } from "./_core/hooks/useAuth";
-import { Loader2 } from "lucide-react";
+import ListingDetail from "./pages/ListingDetail";
+import TransactionHistory from "./pages/TransactionHistory";
+import FarmerListings from "./pages/FarmerListings";
+import HarvestUpdate from "./pages/HarvestUpdate";
+import PayoutRequest from "./pages/PayoutRequest";
+import MarketPrices from "./pages/MarketPrices";
+import AdminConsole from "./pages/AdminConsole";
+import NotFound from "./pages/NotFound";
 
-function ProtectedRoute({ component: Component, requiredRole }: { component: any; requiredRole?: string }) {
+function FullPageSpinner() {
+  return (
+    <div className="flex min-h-screen items-center justify-center">
+      <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-primary" />
+    </div>
+  );
+}
+
+function ProtectedRoute({
+  component: Component,
+  requiredRole,
+}: {
+  component: ComponentType;
+  requiredRole?: "farmer" | "investor" | "admin";
+}) {
   const { user, loading } = useAuth();
+  const [, navigate] = useLocation();
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-      </div>
-    );
-  }
+  const wrongRole =
+    Boolean(user) && Boolean(requiredRole) && user?.role !== requiredRole && user?.role !== "admin";
 
-  if (!user) {
-    return <Auth />;
-  }
+  useEffect(() => {
+    if (loading || !user) return;
+    if (!wrongRole) return;
+    if (user.role === "farmer") navigate("/farmer/dashboard");
+    else if (user.role === "investor") navigate("/investor/dashboard");
+    else navigate("/prices");
+  }, [loading, navigate, user, wrongRole]);
 
-  if (requiredRole && user.role !== requiredRole) {
-    return <NotFound />;
-  }
+  // While auth is resolving — or while a role redirect is in flight — show a
+  // spinner. The original rendered the login form here, which made a successful
+  // login appear to reset itself.
+  if (loading) return <FullPageSpinner />;
+  if (!user) return <Auth />;
+  if (wrongRole) return <FullPageSpinner />;
 
-  return <Component />;
+  return (
+    <AppShell>
+      <Component />
+    </AppShell>
+  );
+}
+
+function PublicPage({ component: Component }: { component: ComponentType }) {
+  return (
+    <AppShell>
+      <Component />
+    </AppShell>
+  );
 }
 
 function Router() {
-  const { user, loading } = useAuth();
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-      </div>
-    );
-  }
-
   return (
     <Switch>
-      <Route path={"/"} component={Home} />
-      <Route path={"/auth"} component={Auth} />
+      <Route path="/auth" component={Auth} />
+      <Route path="/prices" component={() => <PublicPage component={MarketPrices} />} />
       <Route
-        path={"/investor/dashboard"}
+        path="/investor/dashboard"
         component={() => <ProtectedRoute component={InvestorDashboard} requiredRole="investor" />}
       />
       <Route
-        path={"/farmer/dashboard"}
+        path="/farmer/dashboard"
         component={() => <ProtectedRoute component={FarmerDashboard} requiredRole="farmer" />}
       />
       <Route
-        path={"/marketplace"}
-        component={() => <ProtectedRoute component={Marketplace} />}
+        path="/marketplace"
+        component={() => <ProtectedRoute component={Marketplace} requiredRole="investor" />}
       />
-      <Route path={"/404"} component={NotFound} />
-      {/* Final fallback route */}
+      <Route
+        path="/farmer/listings"
+        component={() => <ProtectedRoute component={FarmerListings} requiredRole="farmer" />}
+      />
+      <Route path="/listing/:id" component={() => <ProtectedRoute component={ListingDetail} />} />
+      <Route path="/transactions" component={() => <ProtectedRoute component={TransactionHistory} />} />
+      <Route
+        path="/farmer/harvest"
+        component={() => <ProtectedRoute component={HarvestUpdate} requiredRole="farmer" />}
+      />
+      <Route
+        path="/investor/payout"
+        component={() => <ProtectedRoute component={PayoutRequest} requiredRole="investor" />}
+      />
+      <Route path="/admin" component={() => <ProtectedRoute component={AdminConsole} requiredRole="admin" />} />
+      {/* Home page - must be last before the catch-all */}
+      <Route path="/" component={Home} />
       <Route component={NotFound} />
     </Switch>
   );

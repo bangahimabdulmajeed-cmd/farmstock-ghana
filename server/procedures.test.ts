@@ -96,7 +96,7 @@ describe("FarmStock Ghana API Procedures", () => {
     it("should retrieve transaction history", async () => {
       const caller = appRouter.createCaller(createMockContext());
       
-      const transactions = await caller.transactions.getHistory({
+      const transactions = await caller.investor.getTransactionHistory({
         limit: 20,
         offset: 0,
       });
@@ -108,9 +108,9 @@ describe("FarmStock Ghana API Procedures", () => {
     it("should require authentication for transaction history", async () => {
       const ctx = createMockContext({ user: undefined });
       const caller = appRouter.createCaller(ctx);
-      
+
       try {
-        await caller.transactions.getHistory({
+        await caller.investor.getTransactionHistory({
           limit: 20,
           offset: 0,
         });

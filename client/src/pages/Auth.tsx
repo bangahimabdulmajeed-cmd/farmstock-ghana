@@ -5,8 +5,35 @@ import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { Leaf, ArrowRight, Loader2 } from "lucide-react";
+import { TRPCClientError } from "@trpc/client";
+import { Leaf, ArrowRight, Loader2, Copy, Check } from "lucide-react";
 import { trpc } from "@/lib/trpc";
+
+/** Surface what the server actually said instead of a generic message. */
+function errorMessage(error: unknown, fallback: string): string {
+  if (error instanceof TRPCClientError) {
+    return error.message || fallback;
+  }
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  return fallback;
+}
+
+/** The server decides which workspace the signed-in user belongs in. */
+function destinationForRole(role: string): string | null {
+  switch (role) {
+    case "farmer":
+      return "/farmer/dashboard";
+    case "investor":
+      return "/investor/dashboard";
+    case "admin":
+      // Admins can open either workspace; the investor view is the default.
+      return "/investor/dashboard";
+    default:
+      return null;
+  }
+}
 
 export default function Auth() {
   const [phoneNumber, setPhoneNumber] = useState("");
@@ -14,7 +41,10 @@ export default function Auth() {
   const [userRole, setUserRole] = useState<"farmer" | "investor">("investor");
   const [step, setStep] = useState<"phone" | "otp">("phone");
   const [isLoading, setIsLoading] = useState(false);
+  const [demoOTP, setDemoOTP] = useState<string | null>(null);
+  const [copiedOTP, setCopiedOTP] = useState(false);
   const [, navigate] = useLocation();
+  const utils = trpc.useUtils();
 
   const requestOTPMutation = trpc.auth.requestOTP.useMutation();
   const verifyOTPMutation = trpc.auth.verifyOTPAndLogin.useMutation();
@@ -27,13 +57,24 @@ export default function Auth() {
 
     setIsLoading(true);
     try {
-      await requestOTPMutation.mutateAsync({
-        phoneNumber: phoneNumber.startsWith("+") ? phoneNumber : `+233${phoneNumber.slice(-9)}`,
+      // Support international numbers (with +) or Ghana numbers (without +)
+      let formattedNumber = phoneNumber;
+      if (!phoneNumber.startsWith("+")) {
+        // If no +, assume Ghana number and add country code
+        formattedNumber = `+233${phoneNumber.slice(-9)}`;
+      }
+      
+      const response = await requestOTPMutation.mutateAsync({
+        phoneNumber: formattedNumber,
       });
       setStep("otp");
-      toast.success("OTP sent to your phone number");
+      // `demoOtp` only exists outside production, so the box below is hidden
+      // automatically in a real deployment.
+      setDemoOTP(typeof response.demoOtp === "string" ? response.demoOtp : null);
+      toast.success(response.message || "OTP sent to your phone number");
     } catch (error) {
-      toast.error("Failed to send OTP. Please try again.");
+      setDemoOTP(null);
+      toast.error(errorMessage(error, "Failed to send OTP. Please try again."));
     } finally {
       setIsLoading(false);
     }
@@ -47,17 +88,50 @@ export default function Auth() {
 
     setIsLoading(true);
     try {
-      await verifyOTPMutation.mutateAsync({
-        phoneNumber: phoneNumber.startsWith("+") ? phoneNumber : `+233${phoneNumber.slice(-9)}`,
+      // Use the same formatting as requestOTP
+      let formattedNumber = phoneNumber;
+      if (!phoneNumber.startsWith("+")) {
+        formattedNumber = `+233${phoneNumber.slice(-9)}`;
+      }
+
+      const result = await verifyOTPMutation.mutateAsync({
+        phoneNumber: formattedNumber,
         otpCode,
         userRole,
       });
-      toast.success("Phone verified successfully!");
-      navigate(userRole === "farmer" ? "/farmer/dashboard" : "/investor/dashboard");
+
+      // /auth has no `auth.me` observer, so invalidate() has nothing to refetch.
+      // Fetch it so the authenticated shell sees the new session immediately.
+      await utils.auth.me.fetch();
+
+      // The server decides the role: an existing account keeps the role it
+      // already has, so the selected tab cannot be trusted for routing.
+      const destination = destinationForRole(result.role);
+      if (!destination) {
+        toast.error("This account has no workspace yet. Contact support to finish setting it up.");
+        return;
+      }
+
+      if (!result.roleChanged && result.role !== userRole) {
+        toast.info(`Signed in with your existing ${result.role} account.`);
+      } else {
+        toast.success("Phone verified successfully!");
+      }
+
+      navigate(destination);
     } catch (error) {
-      toast.error("Invalid OTP. Please try again.");
+      toast.error(errorMessage(error, "Could not verify that code. Please try again."));
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleCopyOTP = () => {
+    if (demoOTP) {
+      navigator.clipboard.writeText(demoOTP);
+      setCopiedOTP(true);
+      setTimeout(() => setCopiedOTP(false), 2000);
+      toast.success("OTP copied to clipboard");
     }
   };
 
@@ -118,23 +192,17 @@ export default function Auth() {
       return (
         <div className="space-y-4">
           <div>
-            <label className="text-sm font-medium mb-2 block">Phone Number (Ghana)</label>
-            <div className="flex gap-2">
-              <span className="flex items-center px-3 py-3 bg-muted rounded-lg text-sm font-medium">
-                +233
-              </span>
-              <Input
-                type="tel"
-                placeholder="5XXXXXXXXX"
-                value={phoneNumber}
-                onChange={(e) => setPhoneNumber(e.target.value)}
-                disabled={isLoading}
-                maxLength={9}
-                className="flex-1"
-              />
-            </div>
+            <label className="text-sm font-medium mb-2 block">Phone Number</label>
+            <Input
+              type="tel"
+              placeholder="+233501234567 or +15625735548"
+              value={phoneNumber}
+              onChange={(e) => setPhoneNumber(e.target.value)}
+              disabled={isLoading}
+              className="flex-1"
+            />
             <p className="text-xs text-muted-foreground mt-2">
-              Enter your 9-digit phone number (e.g., 501234567)
+              Enter your phone number with country code (e.g., +233501234567 for Ghana or +1... for US)
             </p>
           </div>
 
@@ -165,7 +233,7 @@ export default function Auth() {
         <div>
           <label className="text-sm font-medium mb-2 block">Enter OTP Code</label>
           <p className="text-xs text-muted-foreground mb-3">
-            We sent a 6-digit code to +233{phoneNumber.slice(-9)}
+            We sent a 6-digit code to {phoneNumber.startsWith("+") ? phoneNumber : `+233${phoneNumber.slice(-9)}`}
           </p>
           <Input
             type="text"
@@ -177,6 +245,35 @@ export default function Auth() {
             className="text-center text-2xl tracking-widest font-mono"
           />
         </div>
+
+        {/* Rendered only when the server returned `demoOtp`, i.e. never in production. */}
+        {demoOTP !== null && (
+          <div className="p-4 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg">
+            <div className="flex items-start justify-between mb-2">
+              <div>
+                <p className="text-xs font-medium text-blue-600 dark:text-blue-400 mb-2">
+                  Development only — not shown in production
+                </p>
+                <p className="text-xs text-blue-600 dark:text-blue-400 mb-1">Your OTP</p>
+                <p className="text-2xl font-mono font-bold text-blue-700 dark:text-blue-300 tracking-widest">{demoOTP}</p>
+              </div>
+              <button
+                onClick={handleCopyOTP}
+                className="p-2 hover:bg-blue-100 dark:hover:bg-blue-900 rounded transition-colors"
+                title="Copy OTP"
+              >
+                {copiedOTP ? (
+                  <Check className="w-4 h-4 text-green-600 dark:text-green-400" />
+                ) : (
+                  <Copy className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                )}
+              </button>
+            </div>
+            <p className="text-xs text-blue-600 dark:text-blue-400">
+              This code is echoed by the API in non-production environments only.
+            </p>
+          </div>
+        )}
 
         <Button
           onClick={handleVerifyOTP}
@@ -202,6 +299,7 @@ export default function Auth() {
           onClick={() => {
             setStep("phone");
             setOtpCode("");
+            setDemoOTP(null);
           }}
           disabled={isLoading}
           className="w-full"

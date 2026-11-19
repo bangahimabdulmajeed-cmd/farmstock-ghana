@@ -1,12 +1,20 @@
 import { getDb, getUserByPhoneNumber } from "./db";
 import { users } from "../drizzle/schema";
-import { eq } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
+import { randomInt } from "node:crypto";
+import { nanoid } from "nanoid";
+import twilio from "twilio";
+
+/** Max wrong guesses before the code is destroyed and a new one is required. */
+export const MAX_OTP_ATTEMPTS = 5;
 
 /**
- * Generate a 6-digit OTP code
+ * Generate a 6-digit OTP code.
+ * Uses the CSPRNG — `Math.random()` is guessable from observed output and must
+ * never be used for a credential.
  */
 export function generateOTP(): string {
-  return Math.floor(100000 + Math.random() * 900000).toString();
+  return randomInt(100_000, 1_000_000).toString();
 }
 
 /**
@@ -19,19 +27,46 @@ export function getOTPExpiration(): Date {
 }
 
 /**
- * Send OTP to phone number (mock implementation)
- * In production, integrate with SMS service like Twilio, Africa's Talking, etc.
+ * Generate a permanent openId for OTP-based users
+ * Format: otp_{nanoid} to distinguish from OAuth users
+ */
+export function generatePermanentOpenId(): string {
+  return `otp_${nanoid(32)}`;
+}
+
+/**
+ * Send OTP to phone number using Twilio
+ * Requires TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_PHONE_NUMBER env vars
  */
 export async function sendOTP(phoneNumber: string, otpCode: string): Promise<boolean> {
   try {
-    // Mock implementation - in production, call SMS API
-    console.log(`[OTP] Sending OTP ${otpCode} to ${phoneNumber}`);
-    
-    // For demo purposes, log the OTP
-    if (process.env.NODE_ENV === "development") {
-      console.log(`[OTP] Demo OTP: ${otpCode}`);
+    // Check if Twilio is configured
+    const accountSid = process.env.TWILIO_ACCOUNT_SID;
+    const authToken = process.env.TWILIO_AUTH_TOKEN;
+    const twilioNumber = process.env.TWILIO_PHONE_NUMBER;
+
+    if (!accountSid || !authToken || !twilioNumber) {
+      console.warn("[OTP] Twilio not configured. Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_PHONE_NUMBER");
+      if (process.env.NODE_ENV === "production") {
+        // Never silently "succeed" without delivering in production: callers
+        // must not believe a code reached the user when it did not.
+        return false;
+      }
+      console.log(`[OTP] Demo OTP for ${phoneNumber}: ${otpCode}`);
+      return true; // Allow local testing without Twilio
     }
-    
+
+    // Initialize Twilio client
+    const client = twilio(accountSid, authToken);
+
+    // Send SMS
+    const message = await client.messages.create({
+      body: `Your FarmStock Ghana verification code is: ${otpCode}. Valid for 5 minutes.`,
+      from: twilioNumber,
+      to: phoneNumber,
+    });
+
+    console.log(`[OTP] SMS sent successfully to ${phoneNumber}. Message SID: ${message.sid}`);
     return true;
   } catch (error) {
     console.error("[OTP] Failed to send OTP:", error);
@@ -41,8 +76,11 @@ export async function sendOTP(phoneNumber: string, otpCode: string): Promise<boo
 
 /**
  * Create or update OTP for a phone number
+ * Ensures user has a permanent openId that will be used for session tokens
  */
-export async function createOrUpdateOTP(phoneNumber: string): Promise<{ otpCode: string; expiresAt: Date } | null> {
+export async function createOrUpdateOTP(
+  phoneNumber: string,
+): Promise<{ otpCode: string; expiresAt: Date; openId: string; delivered: boolean } | null> {
   const db = await getDb();
   if (!db) {
     console.warn("[OTP] Database not available");
@@ -57,27 +95,43 @@ export async function createOrUpdateOTP(phoneNumber: string): Promise<{ otpCode:
     const existingUser = await getUserByPhoneNumber(phoneNumber);
 
     if (existingUser) {
-      // Update existing user's OTP
+      // Update existing user's OTP (keep their existing openId), reset the guess counter
       await db
         .update(users)
-        .set({ otpCode, otpExpiresAt: expiresAt })
+        .set({ otpCode, otpExpiresAt: expiresAt, otpAttempts: 0 })
         .where(eq(users.phoneNumber, phoneNumber));
+
+      const delivered = await sendOTP(phoneNumber, otpCode);
+      if (!delivered && process.env.NODE_ENV === "production") {
+        await clearOTP(phoneNumber);
+        return null;
+      }
+
+      return { otpCode, expiresAt, openId: existingUser.openId, delivered };
     } else {
-      // Create new user with OTP (not verified yet)
+      // Create new user with permanent openId
+      const permanentOpenId = generatePermanentOpenId();
+
       await db.insert(users).values({
+        openId: permanentOpenId,
         phoneNumber,
         otpCode,
         otpExpiresAt: expiresAt,
+        otpAttempts: 0,
         isPhoneVerified: false,
-        role: "user",
-        openId: `temp-${phoneNumber}-${Date.now()}`, // Temporary, will be replaced on OAuth
+        role: "user", // Default role, will be updated on verification
+        loginMethod: "phone_otp",
+        name: `User-${phoneNumber.slice(-4)}`, // Temporary name
       });
+
+      const delivered = await sendOTP(phoneNumber, otpCode);
+      if (!delivered && process.env.NODE_ENV === "production") {
+        await clearOTP(phoneNumber);
+        return null;
+      }
+
+      return { otpCode, expiresAt, openId: permanentOpenId, delivered };
     }
-
-    // Send OTP via SMS
-    await sendOTP(phoneNumber, otpCode);
-
-    return { otpCode, expiresAt };
   } catch (error) {
     console.error("[OTP] Failed to create OTP:", error);
     return null;
@@ -86,12 +140,16 @@ export async function createOrUpdateOTP(phoneNumber: string): Promise<{ otpCode:
 
 /**
  * Verify OTP for a phone number
+ * Returns the user's openId which will be used for session token
  */
-export async function verifyOTP(phoneNumber: string, otpCode: string): Promise<boolean> {
+export async function verifyOTP(
+  phoneNumber: string,
+  otpCode: string,
+): Promise<{ success: boolean; openId?: string; attemptsRemaining?: number; lockedOut?: boolean }> {
   const db = await getDb();
   if (!db) {
     console.warn("[OTP] Database not available");
-    return false;
+    return { success: false };
   }
 
   try {
@@ -99,35 +157,69 @@ export async function verifyOTP(phoneNumber: string, otpCode: string): Promise<b
 
     if (!user) {
       console.warn("[OTP] User not found for phone number:", phoneNumber);
-      return false;
+      return { success: false };
+    }
+
+    // No live code: already used, cleared, or never requested.
+    if (!user.otpCode || !user.otpExpiresAt) {
+      return { success: false, attemptsRemaining: 0, lockedOut: true };
+    }
+
+    // Check if OTP has expired
+    if (new Date() > user.otpExpiresAt) {
+      console.warn("[OTP] OTP expired");
+      await clearOTP(phoneNumber);
+      return { success: false, attemptsRemaining: 0, lockedOut: true };
     }
 
     // Check if OTP matches
     if (user.otpCode !== otpCode) {
-      console.warn("[OTP] OTP mismatch");
-      return false;
+      const attemptsUsed = (user.otpAttempts ?? 0) + 1;
+      if (attemptsUsed >= MAX_OTP_ATTEMPTS) {
+        // Burn the code: an attacker must not get unlimited guesses, and a
+        // legitimate user simply requests a new one.
+        await db
+          .update(users)
+          .set({ otpCode: null, otpExpiresAt: null, otpAttempts: 0 })
+          .where(eq(users.phoneNumber, phoneNumber));
+        console.warn("[OTP] Too many failed attempts, code invalidated");
+        return { success: false, attemptsRemaining: 0, lockedOut: true };
+      }
+
+      await db
+        .update(users)
+        .set({ otpAttempts: sql`${users.otpAttempts} + 1` })
+        .where(eq(users.phoneNumber, phoneNumber));
+
+      return { success: false, attemptsRemaining: MAX_OTP_ATTEMPTS - attemptsUsed };
     }
 
-    // Check if OTP has expired
-    if (!user.otpExpiresAt || new Date() > user.otpExpiresAt) {
-      console.warn("[OTP] OTP expired");
-      return false;
-    }
-
-    // Mark phone as verified and clear OTP
-    await db
+    // Mark phone as verified and clear OTP in one statement.
+    // Scoped to this phone *and* the matched code, which makes the code
+    // single-use even under concurrent verification attempts.
+    const claimed = await db
       .update(users)
       .set({
         isPhoneVerified: true,
         otpCode: null,
         otpExpiresAt: null,
+        otpAttempts: 0,
       })
-      .where(eq(users.phoneNumber, phoneNumber));
+      .where(and(eq(users.phoneNumber, phoneNumber), eq(users.otpCode, otpCode)));
 
-    return true;
+    // A concurrent request may have consumed the same code first.
+    if (Array.isArray(claimed) && claimed[0] && typeof claimed[0] === "object" && "affectedRows" in claimed[0]) {
+      const header = claimed[0] as { affectedRows?: number };
+      if (header.affectedRows === 0) {
+        return { success: false };
+      }
+    }
+
+    // Return the user's openId for session creation
+    return { success: true, openId: user.openId };
   } catch (error) {
     console.error("[OTP] Failed to verify OTP:", error);
-    return false;
+    return { success: false };
   }
 }
 

@@ -111,3 +111,12 @@ temp/
 
 # Manus version file (auto-generated, not part of source)
 client/public/__manus__/version.json
+.project-config.json
+
+# Platform debug artifacts (browser logs, raw db query dumps)
+.manus/
+.manus-logs/
+
+# Local env
+.env.local
+.env.*.local
