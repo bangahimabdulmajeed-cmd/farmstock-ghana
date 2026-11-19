@@ -14,13 +14,16 @@
  * In production a `console` fallback is treated as a failure, never as success.
  */
 
-export type SmsProviderId = "arkesel" | "mnotify" | "africas_talking" | "twilio" | "console";
+export type SmsProviderId = "arkesel" | "mnotify" | "africas_talking" | "whatsapp" | "twilio" | "console";
 
 export type SmsResult = {
   delivered: boolean;
   provider: SmsProviderId;
   error?: string;
 };
+
+/** Extra data a channel may need. WhatsApp templates require the code as a parameter. */
+export type SmsOptions = { code?: string };
 
 type Resolved = { id: SmsProviderId; senderId: string };
 
@@ -36,12 +39,15 @@ export function resolveSmsProvider(): Resolved {
   if (explicit === "arkesel") return { id: "arkesel", senderId };
   if (explicit === "mnotify") return { id: "mnotify", senderId };
   if (explicit === "africas_talking") return { id: "africas_talking", senderId };
+  if (explicit === "whatsapp") return { id: "whatsapp", senderId };
   if (explicit === "twilio") return { id: "twilio", senderId };
   if (explicit === "console") return { id: "console", senderId };
 
+  // Cheapest-first for Ghana: local aggregators before the global channels.
   if (env("ARKESEL_API_KEY")) return { id: "arkesel", senderId };
   if (env("MNOTIFY_API_KEY")) return { id: "mnotify", senderId };
   if (env("AT_API_KEY")) return { id: "africas_talking", senderId };
+  if (env("WHATSAPP_TOKEN") && env("WHATSAPP_PHONE_NUMBER_ID")) return { id: "whatsapp", senderId };
   if (env("TWILIO_ACCOUNT_SID") && env("TWILIO_AUTH_TOKEN") && env("TWILIO_PHONE_NUMBER")) {
     return { id: "twilio", senderId };
   }
@@ -55,6 +61,7 @@ export function isSmsConfigured(): boolean {
   if (id === "africas_talking") return env("AT_API_KEY") !== undefined && env("AT_USERNAME") !== undefined;
   if (id === "arkesel") return env("ARKESEL_API_KEY") !== undefined;
   if (id === "mnotify") return env("MNOTIFY_API_KEY") !== undefined;
+  if (id === "whatsapp") return env("WHATSAPP_TOKEN") !== undefined && env("WHATSAPP_PHONE_NUMBER_ID") !== undefined;
   return (
     env("TWILIO_ACCOUNT_SID") !== undefined &&
     env("TWILIO_AUTH_TOKEN") !== undefined &&
@@ -71,7 +78,7 @@ export function smsProviderStatus() {
     sandbox: id === "africas_talking" && env("AT_SANDBOX") === "true",
     hint:
       id === "console"
-        ? "Set ARKESEL_API_KEY, MNOTIFY_API_KEY, AT_API_KEY or TWILIO_* to deliver real SMS."
+        ? "Set ARKESEL_API_KEY, MNOTIFY_API_KEY, AT_API_KEY, WHATSAPP_TOKEN or TWILIO_* to deliver real messages."
         : null,
   };
 }
@@ -200,6 +207,83 @@ async function sendViaAfricasTalking(to: string, message: string, senderId: stri
   }
 }
 
+/**
+ * WhatsApp Cloud API — https://developers.facebook.com/docs/whatsapp/cloud-api
+ *
+ * NOT a free channel. Meta bills per delivered template message; the
+ * authentication category for Ghana is ~$0.004 (Jan 2026 rate cards), which is
+ * slightly MORE than a Ghanaian SMS at ~GH¢0.03 (~$0.0026). It is offered
+ * because some recipients — especially diaspora investors — read WhatsApp
+ * reliably and ignore SMS.
+ *
+ * Requires a Meta Business account, a WhatsApp Business Account, a phone number
+ * ID, and an approved *authentication* template whose body takes one {{1}}
+ * parameter for the code. Approval is not instant.
+ */
+async function sendViaWhatsapp(to: string, options: SmsOptions, fallbackMessage: string): Promise<SmsResult> {
+  const token = env("WHATSAPP_TOKEN");
+  const phoneNumberId = env("WHATSAPP_PHONE_NUMBER_ID");
+  if (!token || !phoneNumberId) {
+    return {
+      delivered: false,
+      provider: "whatsapp",
+      error: "WHATSAPP_TOKEN and WHATSAPP_PHONE_NUMBER_ID must both be set",
+    };
+  }
+
+  const templateName = env("WHATSAPP_TEMPLATE_NAME") ?? "farmstock_otp";
+  const language = env("WHATSAPP_TEMPLATE_LANGUAGE") ?? "en_US";
+  const apiVersion = env("WHATSAPP_API_VERSION") ?? "v21.0";
+  // Cloud API expects digits only, including the country code.
+  const recipient = to.replace(/[^\d]/g, "");
+
+  try {
+    const response = await fetch(`https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        to: recipient,
+        type: "template",
+        template: {
+          name: templateName,
+          language: { code: language },
+          components: [
+            {
+              type: "body",
+              parameters: [{ type: "text", text: options.code ?? fallbackMessage }],
+            },
+          ],
+        },
+      }),
+      signal: AbortSignal.timeout(15_000),
+    });
+
+    let json: Record<string, unknown> | null = null;
+    try {
+      json = (await response.json()) as Record<string, unknown>;
+    } catch {
+      json = null;
+    }
+
+    const messageId = Array.isArray(json?.messages)
+      ? (json?.messages as Array<{ id?: string }>)[0]?.id
+      : undefined;
+    return {
+      delivered: response.ok && Boolean(messageId),
+      provider: "whatsapp",
+      error: response.ok
+        ? undefined
+        : `WhatsApp responded ${response.status}: ${JSON.stringify(json).slice(0, 300)}`,
+    };
+  } catch (error) {
+    return { delivered: false, provider: "whatsapp", error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
 /** Twilio REST API directly, so the SDK is not required at runtime. */
 async function sendViaTwilio(to: string, message: string): Promise<SmsResult> {
   const accountSid = env("TWILIO_ACCOUNT_SID");
@@ -233,7 +317,7 @@ async function sendViaTwilio(to: string, message: string): Promise<SmsResult> {
   }
 }
 
-export async function sendSms(to: string, message: string): Promise<SmsResult> {
+export async function sendSms(to: string, message: string, options: SmsOptions = {}): Promise<SmsResult> {
   const { id, senderId } = resolveSmsProvider();
 
   switch (id) {
@@ -243,6 +327,8 @@ export async function sendSms(to: string, message: string): Promise<SmsResult> {
       return sendViaMnotify(to, message, senderId);
     case "africas_talking":
       return sendViaAfricasTalking(to, message, senderId);
+    case "whatsapp":
+      return sendViaWhatsapp(to, options, message);
     case "twilio":
       return sendViaTwilio(to, message);
     case "console":

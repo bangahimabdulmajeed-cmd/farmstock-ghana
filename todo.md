@@ -9,6 +9,7 @@ URL provided", which overstated what actually worked.
 ## Phase 8: Deployment & Delivery
 
 - [x] Final checkpoint and project delivery
+- [x] Deployment guide for Render + TiDB Cloud ([DEPLOY.md](./DEPLOY.md))
 - [ ] Live platform URL provided — **needs redeploy**; the running build predates the fixes below
 
 ## Phase 9: Security & correctness hardening
@@ -18,6 +19,7 @@ URL provided", which overstated what actually worked.
 - [x] OTP attempt cap (5) with single-use codes and automatic invalidation
 - [x] Rate limiting on OTP request/verify (per IP and per phone number)
 - [x] Pluggable SMS providers (Arkesel, mNotify, Africa's Talking, Twilio, console) with no vendor lock-in
+- [x] WhatsApp Cloud API provider (opt-in — billed per authentication message, ~$0.004 in Ghana)
 - [x] `auth.me` no longer returns `otpCode` or bank account details
 - [x] Session cookies: `SameSite=Lax` over http so login works locally, `maxAge` set
 - [x] Fail closed on a missing `JWT_SECRET` in production

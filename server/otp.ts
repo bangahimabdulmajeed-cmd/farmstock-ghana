@@ -46,6 +46,7 @@ export async function sendOTP(phoneNumber: string, otpCode: string): Promise<boo
   const result = await sendSms(
     phoneNumber,
     `Your FarmStock Ghana verification code is: ${otpCode}. Valid for 5 minutes.`,
+    { code: otpCode },
   );
 
   if (!result.delivered) {

@@ -25,6 +25,9 @@ pnpm db:seed              # demo users, listings and Ghana market prices
 pnpm dev                  # http://localhost:3000
 ```
 
+Deployment (Render + TiDB, the free path) is documented in
+[DEPLOY.md](./DEPLOY.md).
+
 ### Environment variables
 
 | Variable | Required | Purpose |
@@ -49,15 +52,21 @@ Set `SMS_PROVIDER` to force one, otherwise the first configured wins:
 | **Arkesel** (Ghana) | Signup credits | Yes | Local sender IDs, ~GH¢0.03/SMS. Best Ghana fit. `ARKESEL_API_KEY` |
 | **mNotify** (Ghana) | Signup credits | Yes | Ghana-only, local billing. `MNOTIFY_API_KEY` |
 | **Africa's Talking** | Sandbox free | No in sandbox | Sandbox delivers to a web simulator only — free to develop against. `AT_API_KEY`, `AT_USERNAME`, `AT_SANDBOX=true` |
+| **WhatsApp Cloud API** | **No** — authentication templates are billed | Yes | ~$0.004 per authentication message in Ghana, which is *more* than a Ghanaian SMS. Needs business verification and an approved template. `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID` |
 | **Twilio** | Trial credit | Yes | Paid after the trial. |
 | **console** | Always | No | Development only. |
 
 No provider offers unlimited free SMS to Ghanaian numbers. The cheap route is a
 Ghanaian aggregator: at roughly GH¢0.03 per message, a thousand OTPs costs about
-GH¢30. The free route is Africa's Talking's sandbox for development, then a
-Ghanaian provider for production.
+GH¢30 — less than WhatsApp's ~$0.004 per authentication message. The free route
+is Africa's Talking's sandbox for development, then a Ghanaian provider for
+production.
 
 Check what the running server resolved with `admin.smsStatus`.
+
+> WhatsApp is **not** a free channel. Meta moved to per-message pricing in July
+> 2025 and bills authentication templates individually; the free 1,000
+> service-message allowance does not apply to OTPs.
 
 ## Database
 
