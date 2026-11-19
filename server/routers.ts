@@ -8,6 +8,7 @@ import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_
 import { CROP_TYPES, type CropType, type ProduceListing, type User } from "../drizzle/schema";
 import { createOrUpdateOTP, verifyOTP } from "./otp";
 import { rateLimit } from "./rateLimit";
+import { smsProviderStatus } from "./sms";
 import * as db from "./db";
 import {
   getPriceHistory,
@@ -863,6 +864,9 @@ export const appRouter = router({
 
   // Operator console
   admin: router({
+    /** Which SMS provider will be used, and whether it is configured. */
+    smsStatus: adminProcedure.query(() => smsProviderStatus()),
+
     listPayouts: adminProcedure
       .input(
         z

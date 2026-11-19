@@ -17,6 +17,7 @@ URL provided", which overstated what actually worked.
 - [x] Cryptographic OTP generation (`crypto.randomInt`, not `Math.random`)
 - [x] OTP attempt cap (5) with single-use codes and automatic invalidation
 - [x] Rate limiting on OTP request/verify (per IP and per phone number)
+- [x] Pluggable SMS providers (Arkesel, mNotify, Africa's Talking, Twilio, console) with no vendor lock-in
 - [x] `auth.me` no longer returns `otpCode` or bank account details
 - [x] Session cookies: `SameSite=Lax` over http so login works locally, `maxAge` set
 - [x] Fail closed on a missing `JWT_SECRET` in production
@@ -59,7 +60,7 @@ URL provided", which overstated what actually worked.
 
 - [ ] Payment rail (mobile money: MTN MoMo / Hubtel / Paystack)
 - [ ] KYC / ID verification before a farmer can list
-- [ ] Configure a real SMS provider (Twilio) for production OTP delivery
+- [ ] Set a real SMS provider key on the deployment (Arkesel or mNotify — both Ghanaian and ~GH¢0.03/SMS)
 - [ ] Move rate limiting to Redis before running more than one instance
 - [ ] Dispute resolution for under-delivery
 - [ ] Redeploy and re-verify the live URL

@@ -108,8 +108,11 @@ ledger entry.
    (MTN MoMo / Hubtel / Paystack) is the obvious next integration; `transaction`
    and `payoutRequest` are already shaped for it.
 2. **No KYC / ID verification** before a farmer can list.
-3. **No SMS provider configured** — OTP delivery degrades to development mode
-   locally, and refuses to pretend success in production.
+3. **No SMS provider selected yet.** The code supports Arkesel and mNotify
+   (Ghanaian, ~GH¢0.03/SMS), Africa's Talking (free sandbox for development) and
+   Twilio, resolved at runtime in `server/sms/index.ts`. Nothing is configured on
+   the deployment, so OTP delivery is disabled in production by design rather
+   than silently faked.
 4. **Rate limiting is in-process.** It must move to Redis before running more than
    one instance.
 5. **No foreign keys.** The deployment target is TiDB, which does not enforce

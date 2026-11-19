@@ -31,13 +31,33 @@ pnpm dev                  # http://localhost:3000
 | --- | --- | --- |
 | `DATABASE_URL` | yes | `mysql://user:pass@host:port/database` |
 | `JWT_SECRET` | yes in production | Signs session cookies. **The server refuses to start in production without it.** Use 32+ random characters. |
-| `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_PHONE_NUMBER` | in production | OTP SMS delivery. Without them, development prints the code to the console and returns it in the API response; production refuses to issue a code at all. |
+| `SMS_PROVIDER` + that provider's credentials | in production | OTP SMS delivery. See [SMS providers](#sms-providers). With nothing configured, development logs the code instead of sending it, and production refuses to issue a code at all. |
 | `VITE_APP_ID`, `OAUTH_SERVER_URL`, `VITE_OAUTH_PORTAL_URL` | no | Only needed for the optional Manus OAuth login path. Phone login does not use them. |
 | `PORT` | no | Defaults to `3000`; falls forward up to 20 ports if busy. |
 
 `.env` is gitignored. `.project-config.json` (platform deployment manifest) is
 gitignored too because it contains live credentials — if it has ever been
 committed or shared, rotate the database password, `JWT_SECRET` and the AWS keys.
+
+### SMS providers
+
+`server/sms/index.ts` resolves a provider at runtime, so no vendor is hardcoded.
+Set `SMS_PROVIDER` to force one, otherwise the first configured wins:
+
+| Provider | Free tier | Reaches real handsets | Notes |
+| --- | --- | --- | --- |
+| **Arkesel** (Ghana) | Signup credits | Yes | Local sender IDs, ~GH¢0.03/SMS. Best Ghana fit. `ARKESEL_API_KEY` |
+| **mNotify** (Ghana) | Signup credits | Yes | Ghana-only, local billing. `MNOTIFY_API_KEY` |
+| **Africa's Talking** | Sandbox free | No in sandbox | Sandbox delivers to a web simulator only — free to develop against. `AT_API_KEY`, `AT_USERNAME`, `AT_SANDBOX=true` |
+| **Twilio** | Trial credit | Yes | Paid after the trial. |
+| **console** | Always | No | Development only. |
+
+No provider offers unlimited free SMS to Ghanaian numbers. The cheap route is a
+Ghanaian aggregator: at roughly GH¢0.03 per message, a thousand OTPs costs about
+GH¢30. The free route is Africa's Talking's sandbox for development, then a
+Ghanaian provider for production.
+
+Check what the running server resolved with `admin.smsStatus`.
 
 ## Database
 

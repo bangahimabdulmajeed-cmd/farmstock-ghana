@@ -3,7 +3,7 @@ import { users } from "../drizzle/schema";
 import { eq, and, sql } from "drizzle-orm";
 import { randomInt } from "node:crypto";
 import { nanoid } from "nanoid";
-import twilio from "twilio";
+import { sendSms } from "./sms";
 
 /** Max wrong guesses before the code is destroyed and a new one is required. */
 export const MAX_OTP_ATTEMPTS = 5;
@@ -35,43 +35,28 @@ export function generatePermanentOpenId(): string {
 }
 
 /**
- * Send OTP to phone number using Twilio
- * Requires TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_PHONE_NUMBER env vars
+ * Deliver an OTP over whichever SMS provider is configured.
+ *
+ * Providers are resolved in server/sms/index.ts, so there is no hard dependency
+ * on Twilio: Arkesel or mNotify (both Ghanaian) or Africa's Talking can be used
+ * instead. With no provider configured, development logs the code and returns
+ * true; production returns false so the caller never pretends delivery worked.
  */
 export async function sendOTP(phoneNumber: string, otpCode: string): Promise<boolean> {
-  try {
-    // Check if Twilio is configured
-    const accountSid = process.env.TWILIO_ACCOUNT_SID;
-    const authToken = process.env.TWILIO_AUTH_TOKEN;
-    const twilioNumber = process.env.TWILIO_PHONE_NUMBER;
+  const result = await sendSms(
+    phoneNumber,
+    `Your FarmStock Ghana verification code is: ${otpCode}. Valid for 5 minutes.`,
+  );
 
-    if (!accountSid || !authToken || !twilioNumber) {
-      console.warn("[OTP] Twilio not configured. Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_PHONE_NUMBER");
-      if (process.env.NODE_ENV === "production") {
-        // Never silently "succeed" without delivering in production: callers
-        // must not believe a code reached the user when it did not.
-        return false;
-      }
-      console.log(`[OTP] Demo OTP for ${phoneNumber}: ${otpCode}`);
-      return true; // Allow local testing without Twilio
-    }
-
-    // Initialize Twilio client
-    const client = twilio(accountSid, authToken);
-
-    // Send SMS
-    const message = await client.messages.create({
-      body: `Your FarmStock Ghana verification code is: ${otpCode}. Valid for 5 minutes.`,
-      from: twilioNumber,
-      to: phoneNumber,
-    });
-
-    console.log(`[OTP] SMS sent successfully to ${phoneNumber}. Message SID: ${message.sid}`);
-    return true;
-  } catch (error) {
-    console.error("[OTP] Failed to send OTP:", error);
+  if (!result.delivered) {
+    console.error(
+      `[OTP] ${result.provider} delivery failed for ${phoneNumber}: ${result.error ?? "unknown error"}`,
+    );
     return false;
   }
+
+  console.log(`[OTP] Code delivered to ${phoneNumber} via ${result.provider}`);
+  return true;
 }
 
 /**
