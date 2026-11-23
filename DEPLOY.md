@@ -53,9 +53,14 @@ GitHub repo:
 | Field | Value |
 | --- | --- |
 | Runtime | Node |
-| Build command | `pnpm install --frozen-lockfile && pnpm build` |
-| Start command | `node dist/index.js` |
+| Build command | `pnpm install --frozen-lockfile --prod=false && pnpm build` |
+| Start command | `pnpm start` |
 | Health check path | *(leave empty)* |
+
+`--prod=false` matters: Render sets `NODE_ENV=production`, and without it the
+build tooling (Vite, esbuild, tsc) can be skipped during install. `pnpm start`
+runs `scripts/prod.mjs`, which sets `NODE_ENV=production` in a cross-platform
+way before loading the bundle.
 
 Environment variables:
 
@@ -106,7 +111,8 @@ You already have `.project-config.json` with `build_command`, `dev_command`,
 - `JWT_SECRET` (rotate the existing one)
 - `SMS_PROVIDER`, `ARKESEL_API_KEY`, `SMS_SENDER_ID`
 
-Then rebuild. The platform runs `pnpm run build` and serves `dist/index.js`.
+Then `pnpm build` and `pnpm start`. The platform runs `pnpm run build` and serves
+`dist/index.js`.
 
 Note `experiments: ["no_db_push"]` in that file — the platform will not push
 schema changes for you, so still run `pnpm db:migrate` yourself.

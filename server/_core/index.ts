@@ -6,6 +6,7 @@ import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
+import { isSmsConfigured } from "../sms";
 import { serveStatic, setupVite } from "./vite";
 
 function isPortAvailable(port: number): Promise<boolean> {
@@ -28,6 +29,20 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 }
 
 async function startServer() {
+  // Say out loud what is missing. Without this, a missing .env presents as
+  // "login silently fails" rather than an obvious configuration problem.
+  if (!process.env.DATABASE_URL) {
+    console.warn("[startup] DATABASE_URL is not set — database features will fail. Copy .env.example to .env.");
+  }
+  if (!process.env.JWT_SECRET) {
+    console.warn("[startup] JWT_SECRET is not set — sessions are signed with an empty key (development only).");
+  }
+  if (!isSmsConfigured()) {
+    console.warn(
+      "[startup] No SMS provider configured — verification codes will be printed here and shown in the API response.",
+    );
+  }
+
   const app = express();
   const server = createServer(app);
   // Configure body parser with larger size limit for file uploads
@@ -43,8 +58,11 @@ async function startServer() {
       createContext,
     })
   );
-  // development mode uses Vite, production mode uses static files
-  if (process.env.NODE_ENV === "development") {
+  // Development uses the Vite middleware, production serves the built client.
+  // Default to development when NODE_ENV is unset so `pnpm dev` works on
+  // Windows, where `NODE_ENV=development cmd` is not valid shell syntax.
+  const isDevelopment = process.env.NODE_ENV !== "production";
+  if (isDevelopment) {
     await setupVite(app, server);
   } else {
     serveStatic(app);
