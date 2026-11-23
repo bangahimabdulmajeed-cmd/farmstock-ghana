@@ -104,6 +104,13 @@ async function sendViaArkesel(to: string, message: string, senderId: string): Pr
   const apiKey = env("ARKESEL_API_KEY");
   if (!apiKey) return { delivered: false, provider: "arkesel", error: "ARKESEL_API_KEY is not set" };
 
+  // Arkesel runs two products. v2 is the current JSON API; "SMS Messenger"
+  // accounts only have the legacy query-string endpoint, which answers in plain
+  // text. Select with ARKESEL_API_VERSION (default v2).
+  if ((env("ARKESEL_API_VERSION") ?? "v2").toLowerCase() === "v1") {
+    return sendViaArkeselLegacy(to, message, senderId, apiKey);
+  }
+
   try {
     const { ok, status, json } = await postJson(
       "https://sms.arkesel.com/api/v2/sms/send",
@@ -114,7 +121,57 @@ async function sendViaArkesel(to: string, message: string, senderId: string): Pr
     return {
       delivered,
       provider: "arkesel",
-      error: delivered ? undefined : `Arkesel responded ${status}: ${JSON.stringify(json)}`,
+      error: delivered ? undefined : `Arkesel v2 responded ${status}: ${JSON.stringify(json)}`,
+    };
+  } catch (error) {
+    return { delivered: false, provider: "arkesel", error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+/**
+ * Legacy "SMS Messenger" endpoint:
+ * GET https://sms.arkesel.com/sms/api?action=send-sms&api_key=…&to=…&from=…&sms=…
+ * It replies with plain text, usually "SMS-Sent-Successfully", not JSON.
+ */
+async function sendViaArkeselLegacy(
+  to: string,
+  message: string,
+  senderId: string,
+  apiKey: string,
+): Promise<SmsResult> {
+  try {
+    const url = new URL("https://sms.arkesel.com/sms/api");
+    url.searchParams.set("action", "send-sms");
+    url.searchParams.set("api_key", apiKey);
+    // The legacy API expects a local or international number without the plus.
+    url.searchParams.set("to", to.replace(/^\+/, ""));
+    url.searchParams.set("from", senderId);
+    url.searchParams.set("sms", message);
+
+    const response = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+    const text = await response.text().catch(() => "");
+
+    // Success is plain text ("SMS-Sent-Successfully") on this endpoint, but
+    // failures are JSON (e.g. {"code":"102","message":"Authentication failed"}),
+    // so accept either shape rather than assuming plain text.
+    let parsed: Record<string, unknown> | null = null;
+    try {
+      parsed = JSON.parse(text) as Record<string, unknown>;
+    } catch {
+      parsed = null;
+    }
+
+    const delivered =
+      response.ok &&
+      (String(parsed?.code ?? "") === "200" ||
+        (/sent/i.test(text) && /success/i.test(text)));
+
+    return {
+      delivered,
+      provider: "arkesel",
+      error: delivered
+        ? undefined
+        : `Arkesel v1 responded ${response.status}: ${text.slice(0, 300) || "(empty body)"}`,
     };
   } catch (error) {
     return { delivered: false, provider: "arkesel", error: error instanceof Error ? error.message : String(error) };

@@ -49,7 +49,7 @@ Set `SMS_PROVIDER` to force one, otherwise the first configured wins:
 
 | Provider | Free tier | Reaches real handsets | Notes |
 | --- | --- | --- | --- |
-| **Arkesel** (Ghana) | Signup credits | Yes | Local sender IDs, ~GH¢0.03/SMS. Best Ghana fit. `ARKESEL_API_KEY` |
+| **Arkesel** (Ghana) | Signup credits | Yes | Local sender IDs, ~GH¢0.03/SMS. Best Ghana fit. `ARKESEL_API_KEY`; set `ARKESEL_API_VERSION=v1` for legacy "SMS Messenger" accounts |
 | **mNotify** (Ghana) | Signup credits | Yes | Ghana-only, local billing. `MNOTIFY_API_KEY` |
 | **Africa's Talking** | Sandbox free | No in sandbox | Sandbox delivers to a web simulator only — free to develop against. `AT_API_KEY`, `AT_USERNAME`, `AT_SANDBOX=true` |
 | **WhatsApp Cloud API** | **No** — authentication templates are billed | Yes | ~$0.004 per authentication message in Ghana, which is *more* than a Ghanaian SMS. Needs business verification and an approved template. `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID` |
