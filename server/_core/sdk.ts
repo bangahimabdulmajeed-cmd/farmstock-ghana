@@ -212,19 +212,19 @@ class SDKServer {
       });
       const { openId, appId, name } = payload as Record<string, unknown>;
 
-      if (
-        !isNonEmptyString(openId) ||
-        !isNonEmptyString(appId) ||
-        !isNonEmptyString(name)
-      ) {
-        console.warn("[Auth] Session payload missing required fields");
+      // Only `openId` is essential. `appId` comes from VITE_APP_ID and is only
+      // meaningful for the Manus OAuth flow; phone/OTP sessions have no app id,
+      // so requiring it here silently invalidated every such session — the user
+      // was logged in, redirected, then immediately treated as signed out.
+      if (!isNonEmptyString(openId)) {
+        console.warn("[Auth] Session payload missing openId");
         return null;
       }
 
       return {
         openId,
-        appId,
-        name,
+        appId: isNonEmptyString(appId) ? appId : "",
+        name: isNonEmptyString(name) ? name : "",
       };
     } catch (error) {
       console.warn("[Auth] Session verification failed", String(error));
