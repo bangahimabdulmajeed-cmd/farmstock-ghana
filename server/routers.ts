@@ -8,7 +8,7 @@ import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_
 import { CROP_TYPES, type CropType, type ProduceListing, type User } from "../drizzle/schema";
 import { createOrUpdateOTP, verifyOTP } from "./otp";
 import { rateLimit } from "./rateLimit";
-import { smsProviderStatus } from "./sms";
+import { smsProviderStatus, isSmsConfigured } from "./sms";
 import * as db from "./db";
 import {
   getPriceHistory,
@@ -195,15 +195,21 @@ export const appRouter = router({
           });
         }
 
-        // The code is ONLY echoed outside production. In production it is
-        // delivered by SMS and must never appear in an API response.
         const isProduction = process.env.NODE_ENV === "production";
+        const smsReady = isSmsConfigured();
+
+        // Echo the code back only when it cannot have reached the user: never in
+        // production, and not in development either once a real provider is
+        // configured — otherwise a working SMS setup would still show the code
+        // on screen and the live path would never be exercised.
+        const echoCode = !isProduction && (!smsReady || !result.delivered);
 
         return {
           success: true as const,
-          message: "OTP sent to your phone number",
+          message: echoCode ? "Verification code generated (SMS not delivered)" : "OTP sent to your phone number",
           expiresIn: 5 * 60,
-          ...(isProduction ? {} : { demoOtp: result.otpCode }),
+          delivered: result.delivered,
+          ...(echoCode ? { demoOtp: result.otpCode } : {}),
         };
       }),
 
