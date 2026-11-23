@@ -27,7 +27,9 @@ demo and not for real traffic.
    mysql://<user>.root:<password>@gateway01.eu-central-1.prod.aws.tidbcloud.com:4000/farmstock?ssl={"rejectUnauthorized":true}
    ```
 
-   Keep the `?ssl=` part — TiDB requires TLS.
+   Keep the `?ssl=` part — TiDB requires TLS. If Node later reports
+   `UNABLE_TO_VERIFY_LEAF_SIGNATURE`, download the CA bundle from the Connect
+   dialog and point `DATABASE_CA_CERT` at the `.pem` file.
 
 > Already have the Manus-provisioned cluster? Its URL is the `DATABASE_URL` in
 > `.project-config.json`. Check it still exists before relying on it: free

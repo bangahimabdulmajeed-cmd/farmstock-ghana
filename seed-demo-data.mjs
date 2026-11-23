@@ -7,6 +7,7 @@
  * listings are only created when the farmer has none yet.
  */
 import mysql from "mysql2/promise";
+import { readFileSync } from "node:fs";
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
@@ -31,6 +32,14 @@ function credentialsFromUrl(raw) {
     }
   } else if (isTiDbCloud) {
     ssl = { minVersion: "TLSv1.2", rejectUnauthorized: true };
+  }
+
+  if (ssl && process.env.DATABASE_CA_CERT) {
+    try {
+      ssl = { ...ssl, ca: readFileSync(process.env.DATABASE_CA_CERT, "utf8") };
+    } catch {
+      /* fall back to the system trust store */
+    }
   }
 
   return {

@@ -1,6 +1,7 @@
 import { eq, and, or, like, desc, asc, gte, lte, sql, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { createPool } from "mysql2/promise";
+import { readFileSync } from "node:fs";
 import { 
   InsertUser, 
   users, 
@@ -61,6 +62,18 @@ function connectionConfigFromUrl(url: string) {
     }
   } else if (isTiDbCloud) {
     ssl = { minVersion: "TLSv1.2", rejectUnauthorized: true };
+  }
+
+  // TiDB's console offers a downloadable CA bundle. Only needed when the
+  // platform certificate is not in the system trust store (in which case Node
+  // raises UNABLE_TO_VERIFY_LEAF_SIGNATURE).
+  const caPath = process.env.DATABASE_CA_CERT;
+  if (ssl && caPath) {
+    try {
+      ssl = { ...ssl, ca: readFileSync(caPath, "utf8") };
+    } catch (error) {
+      console.warn(`[Database] Could not read DATABASE_CA_CERT at ${caPath}:`, error);
+    }
   }
 
   return {

@@ -1,4 +1,5 @@
 import { defineConfig } from "drizzle-kit";
+import { readFileSync } from "node:fs";
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
@@ -28,6 +29,15 @@ function credentialsFromUrl(raw: string) {
     }
   } else if (isTiDbCloud) {
     ssl = { minVersion: "TLSv1.2", rejectUnauthorized: true };
+  }
+
+  // Optional custom CA bundle, as offered in the TiDB console.
+  if (ssl && process.env.DATABASE_CA_CERT) {
+    try {
+      ssl = { ...ssl, ca: readFileSync(process.env.DATABASE_CA_CERT, "utf8") };
+    } catch {
+      /* fall back to the system trust store */
+    }
   }
 
   return {
