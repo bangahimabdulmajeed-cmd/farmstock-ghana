@@ -1,5 +1,6 @@
 import { eq, and, or, like, desc, asc, gte, lte, sql, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
+import { createPool } from "mysql2/promise";
 import { 
   InsertUser, 
   users, 
@@ -34,11 +35,50 @@ function getInsertId(result: unknown): number | null {
   return null;
 }
 
+/**
+ * Turn a DATABASE_URL into explicit mysql2 options.
+ *
+ * TiDB connection strings hand you `?ssl={"rejectUnauthorized":true}`. Passed
+ * through naively that stays a string, and the driver either ignores it (silent
+ * plaintext attempt) or throws. Parsing it here, and defaulting to TLS for any
+ * tidbcloud.com host, makes the documented TiDB string work as-is.
+ */
+function connectionConfigFromUrl(url: string) {
+  const parsed = new URL(url);
+  const isTiDbCloud = parsed.hostname.endsWith("tidbcloud.com");
+
+  let ssl: Record<string, unknown> | undefined;
+  const sslParam = parsed.searchParams.get("ssl");
+  if (sslParam) {
+    try {
+      const decoded: unknown = JSON.parse(sslParam);
+      ssl =
+        typeof decoded === "object" && decoded !== null
+          ? (decoded as Record<string, unknown>)
+          : { rejectUnauthorized: true };
+    } catch {
+      ssl = { rejectUnauthorized: true };
+    }
+  } else if (isTiDbCloud) {
+    ssl = { minVersion: "TLSv1.2", rejectUnauthorized: true };
+  }
+
+  return {
+    host: parsed.hostname,
+    port: parsed.port ? Number(parsed.port) : 3306,
+    user: decodeURIComponent(parsed.username),
+    password: decodeURIComponent(parsed.password),
+    database: decodeURIComponent(parsed.pathname.replace(/^\//, "")) || undefined,
+    ssl,
+    connectionLimit: 10,
+  };
+}
+
 // Lazily create the drizzle instance so local tooling can run without a DB.
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
-      _db = drizzle(process.env.DATABASE_URL);
+      _db = drizzle(createPool(connectionConfigFromUrl(process.env.DATABASE_URL)));
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;

@@ -14,9 +14,36 @@ if (!connectionString) {
   process.exit(1);
 }
 
-// Passing the URL straight to mysql2 avoids the hand-rolled string splitting in
-// the previous version, which produced a password of "//user".
-const connection = await mysql.createConnection(connectionString);
+// Parse the URL ourselves so TiDB's `?ssl={"rejectUnauthorized":true}` becomes a
+// real TLS option instead of being ignored by the driver.
+function credentialsFromUrl(raw) {
+  const parsed = new URL(raw);
+  const isTiDbCloud = parsed.hostname.endsWith("tidbcloud.com");
+
+  let ssl;
+  const sslParam = parsed.searchParams.get("ssl");
+  if (sslParam) {
+    try {
+      const decoded = JSON.parse(sslParam);
+      ssl = typeof decoded === "object" && decoded !== null ? decoded : { rejectUnauthorized: true };
+    } catch {
+      ssl = { rejectUnauthorized: true };
+    }
+  } else if (isTiDbCloud) {
+    ssl = { minVersion: "TLSv1.2", rejectUnauthorized: true };
+  }
+
+  return {
+    host: parsed.hostname,
+    port: parsed.port ? Number(parsed.port) : 3306,
+    user: decodeURIComponent(parsed.username),
+    password: decodeURIComponent(parsed.password),
+    database: decodeURIComponent(parsed.pathname.replace(/^\//, "")),
+    ssl,
+  };
+}
+
+const connection = await mysql.createConnection(credentialsFromUrl(connectionString));
 
 const GHS = (value) => Number(value).toFixed(2);
 
