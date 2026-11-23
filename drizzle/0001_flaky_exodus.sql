@@ -1,10 +1,15 @@
+-- NOTE: JSON defaults are deliberately absent here. TiDB rejects `DEFAULT ('[]')`
+-- on a json column with ERROR 1064, and because the first statement in this file
+-- was one of those, the failure aborted the entire migration and left the app
+-- with a `users` table that had no `phoneNumber` column. The columns are
+-- nullable and every writer supplies a value explicitly.
 CREATE TABLE `harvestUpdate` (
 	`id` int AUTO_INCREMENT NOT NULL,
 	`produceListingId` int NOT NULL,
 	`farmerId` int NOT NULL,
 	`status` enum('in_progress','completed','delayed') NOT NULL,
 	`description` text,
-	`images` json DEFAULT ('[]'),
+	`images` json,
 	`actualQuantity` decimal(10,2),
 	`harvestDate` datetime,
 	`createdAt` timestamp NOT NULL DEFAULT (now()),
@@ -71,8 +76,8 @@ CREATE TABLE `produceListing` (
 	`location` text NOT NULL,
 	`fundingStatus` enum('active','fully_funded','harvested','completed','cancelled') NOT NULL DEFAULT 'active',
 	`fundedAmount` decimal(15,2) DEFAULT '0',
-	`exitOptions` json DEFAULT ('{"cashPayout":true,"physicalDelivery":false,"shareTrading":true}'),
-	`images` json DEFAULT ('[]'),
+	`exitOptions` json,
+	`images` json,
 	`harvestStatus` enum('pending','in_progress','completed') DEFAULT 'pending',
 	`payoutStatus` enum('pending','processing','completed') DEFAULT 'pending',
 	`payoutDate` datetime,
