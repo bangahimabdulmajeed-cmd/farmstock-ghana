@@ -13,7 +13,8 @@
     "db:push": "drizzle-kit migrate",
     "db:migrate": "drizzle-kit migrate",
     "db:generate": "drizzle-kit generate",
-    "db:seed": "node seed-demo-data.mjs"
+    "db:seed": "node seed-demo-data.mjs",
+    "db:check": "node scripts/db-check.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.693.0",

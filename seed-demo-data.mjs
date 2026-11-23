@@ -6,6 +6,7 @@
  * Requires DATABASE_URL. Safe to run more than once: users are upserted and
  * listings are only created when the farmer has none yet.
  */
+import "dotenv/config";
 import mysql from "mysql2/promise";
 import { readFileSync } from "node:fs";
 
